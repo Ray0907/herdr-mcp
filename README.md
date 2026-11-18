@@ -8,10 +8,14 @@ Tested with herdr 0.9.5, `mcp` 2.3.0, and Claude Desktop on macOS.
 
 ## Security
 
-`pane_run` and `agent_prompt` execute arbitrary commands on your machine. That
-is the point of the tool, and it is acceptable only because the transport is
-local stdio started by Claude Desktop. Do not put this server behind HTTP or a
-tunnel. In Claude Desktop, keep these two tools on "ask every time".
+`pane_run`, `agent_prompt`, and `agent_start` execute commands on this machine.
+That is the point of the tool, and it is acceptable only because the transport
+is local stdio started by Claude Desktop. There is no HTTP transport; do not put
+this server behind HTTP or a tunnel. In Claude Desktop, keep these tools on
+"ask every time".
+
+`pane_close` and `tab_close` terminate the processes inside and cannot be
+undone; see the ownership guard below.
 
 ## Tools
 
@@ -22,6 +26,13 @@ tunnel. In Claude Desktop, keep these two tools on "ask every time".
 | `pane_run(pane_id, command)` | Types a command into a pane and presses Enter |
 | `agent_read(target, lines=120)` | Recent output of an agent |
 | `agent_prompt(target, text, timeout_ms=120000)` | Sends a prompt to an agent and waits for it to settle |
+| `tab_create(workspace_id, cwd="", label="")` | Creates a tab; returns its tab ID and root pane ID |
+| `pane_split(pane_id, direction, cwd="")` | Splits a pane `right` or `down`; returns the new pane ID |
+| `pane_close(pane_id)` | Closes a pane this server created |
+| `tab_close(tab_id)` | Closes a tab this server created |
+| `agent_start(name, kind, pane_id, args=None)` | Starts a coding agent in a pane at its shell prompt |
+
+New tabs and panes never take focus.
 
 `pane_id` looks like `w1:p2`. `target` is a pane ID or an agent name. Get both
 from `snapshot`; the server does not run inside a pane, so there is no "current"
@@ -80,22 +91,52 @@ before pane_run or agent_prompt.
 Ask me before running anything that deletes, overwrites, or pushes.
 ```
 
+## Error handling
+
+- Any CLI failure becomes a tool error (`isError`) carrying the CLI's JSON as-is
+  (`server_not_running`, `agent_blocked`, `agent_prompt_stalled`, `timeout`, ...).
+- `agent_prompt` whose turn ends at a question/approval dialog makes the CLI exit
+  0 with `agent_status: "blocked"`. The server flags that as an error: the agent
+  is waiting for a human; read it with `agent_read`.
+- No automatic retry. A `timeout` (CLI or subprocess) does not prove the prompt
+  was not delivered, so do not blindly resend.
+- Subprocess timeout: 30 s per call; `agent_prompt` uses `timeout_ms` + 10 s.
+- `lines` is clamped to 1..2000; `timeout_ms` to 1000..600000.
+- Ownership guard: `pane_close`, `tab_close`, and `agent_start` act only on
+  panes/tabs this server created since it started. Others are refused.
+  `pane_close` and `tab_close` also refuse when any affected pane hosts an agent
+  or has a foreground process, and list each busy pane and what it runs. A
+  just-created pane can be briefly refused while its shell starts; retry.
+- Missing or broken `herdr` binary is a tool error; the server stays up.
+
 ## Test
 
 Run from inside a Herdr pane. The test splits that pane, uses the new pane as a
-scratch target, and closes it afterwards.
+scratch target, and closes what it created afterwards.
 
 ```sh
 uv run test_e2e.py
 ```
 
+The error-path tests live in `test_failure_modes.py` (called from `test_e2e.py`);
+shared helpers are in `e2e_common.py`.
+They use fake `HERDR_BIN` scripts (written to a temp dir, then deleted)
+and a nonexistent `HERDR_SOCKET_PATH` to exercise failure modes.
 It writes `e2e-transcript.json`, which contains a snapshot of your real session
 (pane titles and paths). Keep that file out of version control.
-
 The test hardcodes `/opt/homebrew/bin/herdr` and `/opt/homebrew/bin/uv`.
 
-## Not covered by the test
+## Verification status
 
-- `agent_prompt` reaching a real agent (checked by hand through Claude Desktop)
-- `agent_blocked` and `agent_prompt_stalled` responses
-- Subprocess timeout
+- Verified by hand from Claude Desktop: `snapshot`, `pane_read`, `pane_run`,
+  `agent_read`, `agent_prompt`, `agent_start` (`claude --model opusplan` started
+  and replied), `tab_create`, `pane_split`, `pane_close` (including refusal of a
+  pane running a process).
+- `tab_close`: verified over MCP stdio by `test_e2e.py` (create/close an empty
+  `/tmp` tab, refusal of a tab from another server instance, refusal of a tab
+  containing a hand-added pane). From Claude Desktop it was blocked by Desktop's
+  own safety review, not by the server.
+- Verified against the real CLI and covered by fake-binary tests: `timeout`,
+  `agent_blocked`, `agent_prompt_stalled`, blocked-settle, `server_not_running`,
+  subprocess timeout.
+- Not verified from Claude Desktop: `tab_close` (see above).
