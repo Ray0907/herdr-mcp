@@ -55,6 +55,31 @@ another location:
 "env": { "HERDR_BIN": "/usr/local/bin/herdr" }
 ```
 
+## Use in a Claude Project
+
+The server is registered with the Claude Desktop app, not with a single
+Project, so its tools are available in Project chats opened in the desktop app.
+Projects opened on claude.ai in a browser cannot reach it: a local stdio server
+only exists on your machine.
+
+1. Open the Project in Claude Desktop and start a chat.
+2. Check that `herdr` is enabled in the chat's tools menu.
+3. Ask in plain language, for example:
+   - "Take a herdr snapshot and list every pane and agent."
+   - "Read the last 50 lines of pane w1:p2."
+   - "Ask the agent named reviewer to report its status."
+
+To save repeating yourself, add something like this to the Project's
+instructions:
+
+```text
+You can control my local Herdr session through the herdr tools.
+Call snapshot first to get pane IDs and agent names; never guess them.
+Read before you write: use pane_read or agent_read to check a pane's state
+before pane_run or agent_prompt.
+Ask me before running anything that deletes, overwrites, or pushes.
+```
+
 ## Test
 
 Run from inside a Herdr pane. The test splits that pane, uses the new pane as a
