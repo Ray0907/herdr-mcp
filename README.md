@@ -17,6 +17,12 @@ this server behind HTTP or a tunnel. In Claude Desktop, keep these tools on
 `pane_close` and `tab_close` terminate the processes inside and cannot be
 undone; see the ownership guard below.
 
+`agent_start` args are not the only thing that decides an agent's permissions.
+Your shell aliases and agent config apply too: in practice, `claude --model
+opusplan` started through `agent_start` ran with `--dangerously-skip-permissions`
+(its resume command showed the flag) because of a shell alias. Check what your
+shell turns the agent command into before letting Claude start agents.
+
 ## Tools
 
 | Tool | What it does |
@@ -108,6 +114,23 @@ Ask me before running anything that deletes, overwrites, or pushes.
   or has a foreground process, and list each busy pane and what it runs. A
   just-created pane can be briefly refused while its shell starts; retry.
 - Missing or broken `herdr` binary is a tool error; the server stays up.
+
+## Notes from use in Claude Desktop
+
+- **Agent at a question or approval dialog.** `agent_prompt` returns
+  `agent_blocked` and sends nothing. Read the options with `agent_read`, then
+  answer with `pane_run` (for example `"1"`). That is deciding on the user's
+  behalf: ask the user first.
+- **Starting an agent in a new pane.** `agent_start` right after `tab_create` or
+  `pane_split` can fail with `agent_pane_busy` while the shell is still
+  initialising. Wait a moment and retry. In busy-pane errors the process name
+  can show as `[None]` during that window.
+- **Closing a pane or tab with an agent.** It is refused while the agent runs.
+  End the agent first (for example send `/exit` with `agent_prompt` or
+  `pane_run`), then `pane_close` / `tab_close`.
+- **Refused by Claude, not by the server.** Claude Desktop's own safety review
+  can block destructive calls such as `tab_close` before they reach the server.
+  That is not a server error.
 
 ## Test
 
